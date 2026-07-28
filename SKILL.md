@@ -1,6 +1,6 @@
 ---
 name: 3d-art-direction
-description: Art-direction discipline for AI-driven 3D work in Blender and Unreal Engine — writing executable specs, matching a reference or concept image, and controlling final output quality. 用于 Blender / UE 的建模、材质、灯光、布料模拟、毛发绒面与场景真实感优化。Use this skill whenever the user asks to build, texture, light, simulate, or optimize anything in Blender or Unreal Engine; wants to match a design reference, concept art, or effect image; asks for a modeling, lighting, or material plan, spec, or execution document; mentions Blender MCP, UE MCP, or driving a DCC tool through an agent; or is debugging why a render "looks CG", "looks fake", "looks flat", or "doesn't match the reference". Apply it even when the request sounds simple — "make a cushion", "add fur to this carpet", "fix the lighting" — because the failure modes this skill prevents are not visible in the request itself.
+description: Art-direction discipline for AI-driven 3D work across Blender, Houdini, and game engines (Unreal, Unity) — executable specs, dividing work between tools, matching a reference image, and controlling output quality. 用于 Blender / Houdini / UE / Unity 的建模、材质、灯光、布料模拟、毛发绒面、按设计图对齐与真实感优化。Use whenever the user asks to build, texture, light, simulate, or optimize anything in Blender, Houdini, Unreal, or Unity; wants to match a design reference, concept art, or multi-view drawing; asks for a modeling, lighting, or material plan or spec; asks which tool should handle which part of a 3D pipeline; mentions Blender MCP, Houdini MCP, UE MCP, or Unity CLI; or is debugging why a render "looks CG", "looks fake", or "doesn't match the reference". Apply it even when the request sounds simple — "make a cushion", "add fur", "fix the lighting" — the failure modes this prevents are not visible in the request itself.
 ---
 
 # 3D Art Direction
@@ -95,6 +95,7 @@ AI 驱动 3D 制作有一个结构性弱点：**模型对自己产出的画面�
 1. 勘察   → 报告环境、版本、现有资产、可用能力。不假设，先问。
 2. 诊断   → 指出根因；定义 3~5 条"目标特征"作为全程判据
 3. 定序   → 排出阶段顺序，标注哪些顺序不可调换及原因
+         → 同时定分工：每个环节归哪个工具，见下节
 4. 写规格 → 用 assets/spec-template.md 的六段式结构
 5. 分阶段执行 → 每阶段停下报验收数值，等确认再继续
 6. 收尾   → 交付清单 + 症状对照表
@@ -121,6 +122,66 @@ AI 驱动 3D 制作有一个结构性弱点：**模型对自己产出的画面�
 
 ---
 
+## 工具分工
+
+**总原则：每个可交付物只有一个产出源。** 一个环节定了主力工具，其他工具不重做、不"再优化一遍"。
+
+违反这条产生的重复劳动，是多工具流程里最大的浪费，也是最容易发生的错误。
+
+### 分工表
+
+| 环节 | 主力 | 无 Houdini 时的退路 |
+|---|---|---|
+| 硬表面建模、雕刻、快速道具 | **Blender** | — |
+| 参数化构件（需反复调尺寸、可复用） | **Houdini HDA** | Blender 脚本参数化 |
+| 布料 / 软体模拟 | **Houdini Vellum** | Blender Cloth |
+| 毛发 / 绒毛生成 | **Houdini Groom** | Blender 粒子（注意跨引擎限制） |
+| 散布、随机化、"不完美"扰动 | **Houdini** | Blender 脚本 / 几何节点 |
+| UV、减面、布线整理 | **Blender** | Houdini |
+| 材质 | **交付目标所在处** | 见下 |
+| 灯光、后处理、相机 | **交付目标所在处** | — |
+
+### 三条硬规则
+
+**1. 模拟的输出就是成品几何。**
+
+Vellum / Cloth 在稳定帧的网格本身就是模型。**不要在另一个工具里"最终建模"一遍**——手工去贴合模拟结果既慢又差，重跑一遍模拟则等于前一个工具白开。
+
+模拟之后允许的操作只有：减面、布线整理、UV、烘焙。这些是加工，不是重建。
+
+**2. 材质和灯光做在交付目标处。**
+
+交付到实时引擎时，源软件里的材质和灯光**基本白做**——着色模型不通用，节点不跨越，灯光要重打。只做占位色即可。
+
+唯一例外是**烘焙**（AO、曲率、法线）：那是资产的一部分，属于源软件的职责。
+
+反过来，若最终画面就在源软件里渲染，则材质和灯光是那边的主线工作。**先确认交付目标，再决定这部分投多少工时。**
+
+**3. 数据流单向。**
+
+源软件 → 引擎。不要在引擎里改几何再想同步回去，双向同步没有可靠机制，最终一定失同步。
+
+引擎侧只做：材质、灯光、后处理、摆位、Blueprint / 脚本逻辑。
+
+### 常见反模式
+
+| 反模式 | 后果 |
+|---|---|
+| Houdini 模拟 → Blender 重建 | 一半工作白做 |
+| 交付引擎却在源软件精修材质 | 全部白做 |
+| 同一几何在两个工具各建一次 | 双份维护，必然失同步 |
+| 在 Houdini 里做手工雕刻 | 用错工具，Blender 快数倍 |
+| 在 Blender 手搭 Houdini 已内置的系统 | 代码量差一个数量级 |
+| 在源软件调灯光去"预演"引擎效果 | 预演不准，且要重做 |
+
+### 什么时候不需要 Houdini
+
+单件硬表面道具、无模拟、无散布、一次性使用——Houdini 不产生收益，纯增加交付环节。
+
+它的回报来自三件事：**变体多、模拟重、管线要反复跑**。三条都不占就别引入。
+
+
+
 ## 通用禁止事项
 
 写进每一份规格：
@@ -131,6 +192,9 @@ AI 驱动 3D 制作有一个结构性弱点：**模型对自己产出的画面�
 4. 跨软件交付时改动材质槽名或顺序。
 5. 交付未经导入验证的资产（尺寸、轴向、原点三项必测）。
 6. 为"更真实"而添加与目标风格冲突的元素（磨损、污渍、杂物）——除非规格明确允许。
+7. **把模拟结果拿到另一个工具里重建。**
+8. **交付实时引擎时在源软件精修材质或灯光。**
+9. **接受"完全一致""尽量还原"这类无法判定的目标**——必须先转成可测门槛（见原则 3 与 `reference-matching.md`）。
 
 ---
 
